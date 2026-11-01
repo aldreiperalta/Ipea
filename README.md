@@ -17,13 +17,31 @@ Variação anual do preço médio da gasolina (R$/m³), com média simples, CAGR
 ![Aumento da Gasolina](detalhes/gasolina_variacao.png)
 
 - **Fonte:** ANP via Ipeadata (série `ANP_PRGASOL`)
-- **Código:** [`Gasolina/gasolina.R`](Gasolina/gasolina.R)
+- **Código:** [`Gasolina/gasolina_variacao.R`](Gasolina/gasolina_variacao.R)
 
-### 02. Gasolina por Estados
+### 02. Estado do Preço da Gasolina
 
-![Gasolina por Estados](detalhes/gasolina_estados.png)
+Comparação do preço da gasolina entre os estados.
 
-- **Código:** em breve
+![Estado do Preço da Gasolina](detalhes/gasolina_estados.png)
+
+- **Fonte:** ANP via Ipeadata
+- **Código:** [`Gasolina/gasolina_estados.R`](Gasolina/gasolina_estados.R)
+
+---
+
+## Estrutura do repositório
+
+```
+Ipea/
+├── Gasolina/
+│   ├── gasolina_variacao.R
+│   └── gasolina_estados.R
+├── detalhes/
+│   ├── gasolina_variacao.png
+│   └── gasolina_estados.png
+└── README.md
+```
 
 ---
 
@@ -39,7 +57,7 @@ Variação anual do preço médio da gasolina (R$/m³), com média simples, CAGR
    ```r
    install.packages(c("ipeadatar", "dplyr", "lubridate", "ggplot2", "showtext", "tibble"))
    ```
-5. Abra o script `Gasolina/gasolina.R` e execute com **Ctrl + Shift + S**. As imagens são geradas na pasta `detalhes/`.
+5. Abra um script da pasta `Gasolina/` e execute com **Ctrl + Shift + S**. As imagens são geradas na pasta `detalhes/`.
 
 ---
 
