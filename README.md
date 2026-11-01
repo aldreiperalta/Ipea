@@ -14,11 +14,16 @@ Os dados vêm do [Ipeadata](http://www.ipeadata.gov.br/) e são acessados direto
 
 Variação anual do preço médio da gasolina (R$/m³), com média simples, CAGR e acumulado desde o início do período.
 
-![Aumento da Gasolina](Gasolina/gasolina_variacao.png)
+![Aumento da Gasolina](detalhes/gasolina_variacao.png)
 
 - **Fonte:** ANP via Ipeadata (série `ANP_PRGASOL`)
 - **Código:** [`Gasolina/gasolina.R`](Gasolina/gasolina.R)
-- **Formato:** 1080 x 1440 px (3:4), pronto para Instagram
+
+### 02. Gasolina por Estados
+
+![Gasolina por Estados](detalhes/gasolina_estados.png)
+
+- **Código:** em breve
 
 ---
 
@@ -34,7 +39,7 @@ Variação anual do preço médio da gasolina (R$/m³), com média simples, CAGR
    ```r
    install.packages(c("ipeadatar", "dplyr", "lubridate", "ggplot2", "showtext", "tibble"))
    ```
-5. Abra o script de um projeto e execute com **Ctrl + Shift + S**. A imagem é gerada na pasta do projeto.
+5. Abra o script `Gasolina/gasolina.R` e execute com **Ctrl + Shift + S**. As imagens são geradas na pasta `detalhes/`.
 
 ---
 
