@@ -17,7 +17,7 @@ Variação anual do preço médio da gasolina (R$/m³), com média simples, CAGR
 ![Aumento da Gasolina](detalhes/gasolina_variacao.png)
 
 - **Fonte:** ANP via Ipeadata (série `ANP_PRGASOL`)
-- **Código:** [`Gasolina/gasolina_variacao.R`](Gasolina/gasolina_variacao.R)
+- **Código:** [`Gasolina/Aumento de Gasolina`](Gasolina/Aumento%20de%20Gasolina)
 
 ### 02. Estado do Preço da Gasolina
 
@@ -26,7 +26,7 @@ Comparação do preço da gasolina entre os estados.
 ![Estado do Preço da Gasolina](detalhes/gasolina_estados.png)
 
 - **Fonte:** ANP via Ipeadata
-- **Código:** [`Gasolina/gasolina_estados.R`](Gasolina/gasolina_estados.R)
+- **Código:** [`Gasolina/ESTADO DO PREÇO DA GASOLINA`](Gasolina/ESTADO%20DO%20PRE%C3%87O%20DA%20GASOLINA)
 
 ---
 
@@ -35,8 +35,8 @@ Comparação do preço da gasolina entre os estados.
 ```
 Ipea/
 ├── Gasolina/
-│   ├── gasolina_variacao.R
-│   └── gasolina_estados.R
+│   ├── Aumento de Gasolina
+│   └── ESTADO DO PREÇO DA GASOLINA
 ├── detalhes/
 │   ├── gasolina_variacao.png
 │   └── gasolina_estados.png
