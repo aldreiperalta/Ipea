@@ -1,0 +1,220 @@
+# =============================================================================
+# ESTADO DO PREÇO DA GASOLINA — Ipeadata (Campo Analítico)
+# Paleta do gráfico original (vermelho / branco / âmbar), 1080 x 1440 px, 150 dpi.
+# Cada barra = um período; os segmentos = % dos períodos em cada estado do preço.
+#   - 1 série (padrão): barras por bloco de anos (ex.: 2001–2005, 2006–2010...)
+#   - 2+ séries: uma barra por série
+# =============================================================================
+
+# ---------- 1. PARÂMETROS ----------
+PAR <- list(
+  larg_px   = 1080,
+  alt_px    = 1440,
+  dpi       = 150,
+  dir_saida = ".",
+  arquivo   = "gasolina_estados.png",
+  marca     = "Aldrei Peralta",
+  bg        = "#F8F8F4",
+  dark      = "#111111",
+  grey      = "#8A98A3",
+  f_titulo  = "roboto_slab",
+  f_texto   = "lato",
+  # --- banco ---
+  termo      = "gasolina",       # busca (só para listar as séries no console)
+  codigos    = "ANP_PRGASOL",    # séries de PREÇO; NULL = acha pelo nome ("preço")
+  bloco_anos = 5,                # tamanho do bloco quando há uma série só
+  anos       = NULL,             # NULL = histórico todo; ou últimos N anos
+  tol_anual  = 0.02,             # série anual: variação entre -2% e +2% = Estável
+  tol_mensal = 0.005,            # série mensal: entre -0,5% e +0,5% = Estável
+  min_obs    = 3,                # mínimo de observações por barra
+  max_series = 20
+)
+
+# paleta do gráfico original: vermelho, branco, âmbar
+ESTADOS <- c("Queda" = "#F24A4A", "Estável" = "#FFFFFF", "Alta" = "#FFB700")
+
+suppressPackageStartupMessages({
+  library(ipeadatar)
+  library(dplyr)
+  library(tidyr)
+  library(stringr)
+  library(lubridate)
+  library(ggplot2)
+  library(showtext)
+})
+
+f_titulo <- tryCatch({ font_add_google("Roboto Slab", PAR$f_titulo, bold.wt = 700); PAR$f_titulo }, error = function(e) "serif")
+f_texto  <- tryCatch({ font_add_google("Lato",       PAR$f_texto,  bold.wt = 700); PAR$f_texto  }, error = function(e) "sans")
+showtext_auto()
+
+# ---------- 2. BANCO ----------
+series <- search_series(PAR$termo, language = "br")
+print(series, n = Inf)                       # lista tudo que o Ipeadata tem
+
+cods <- PAR$codigos
+if (is.null(cods)) {
+  cods <- series |>
+    filter(str_detect(name, regex("pre[çc]o", ignore_case = TRUE))) |>
+    pull(code)
+}
+if (length(cods) == 0) stop("Nenhuma série de preço encontrada. Preencha PAR$codigos.")
+
+bruto <- ipeadata(cods, language = "br")
+nomes <- series |> select(code, name) |> distinct(code, .keep_all = TRUE)
+
+# ---------- 3. ESTADOS ----------
+estados <- bruto |>
+  filter(!is.na(value)) |>
+  arrange(code, date) |>
+  group_by(code) |>
+  mutate(
+    var = value / lag(value) - 1,
+    tol = if (median(as.numeric(diff(date)), na.rm = TRUE) > 300) PAR$tol_anual else PAR$tol_mensal,
+    anual = tol == PAR$tol_anual
+  ) |>
+  filter(!is.na(var)) |>
+  ungroup()
+
+if (!is.null(PAR$anos)) {
+  estados <- estados |>
+    group_by(code) |>
+    filter(date >= max(date) - years(PAR$anos)) |>
+    ungroup()
+}
+
+estados <- estados |>
+  mutate(estado = case_when(
+    var >  tol ~ "Alta",
+    var < -tol ~ "Queda",
+    TRUE       ~ "Estável"
+  ))
+
+por_bloco <- length(unique(estados$code)) == 1
+
+if (por_bloco) {
+  ano0 <- min(year(estados$date))
+  estados <- estados |>
+    mutate(ini   = ano0 + ((year(date) - ano0) %/% PAR$bloco_anos) * PAR$bloco_anos,
+           fim   = pmin(ini + PAR$bloco_anos - 1, max(year(date))),
+           grupo = paste0(ini, "–", fim))
+} else {
+  estados <- estados |>
+    left_join(nomes, by = "code") |>
+    mutate(grupo = coalesce(name, code), ini = NA_real_)
+}
+
+resumo <- estados |>
+  count(grupo, estado) |>
+  complete(grupo, estado = names(ESTADOS), fill = list(n = 0)) |>
+  group_by(grupo) |>
+  mutate(total = sum(n), pct = round(100 * n / total)) |>
+  mutate(pct = { d <- 100 - sum(pct); i <- which.max(pct); pct[i] <- pct[i] + d; pct }) |>
+  ungroup() |>
+  filter(total >= PAR$min_obs)
+
+ordem <- if (por_bloco) {
+  estados |> distinct(grupo, ini) |> arrange(ini) |> pull(grupo)
+} else {
+  resumo |> filter(estado == "Alta") |> arrange(pct) |> pull(grupo)
+}
+ordem <- ordem[ordem %in% resumo$grupo]
+ordem <- head(ordem, PAR$max_series)
+if (length(ordem) == 0) stop("Nenhuma barra com observações suficientes.")
+
+dados <- tibble(grupo = ordem, rotulo = str_wrap(ordem, 30))
+n <- nrow(dados)
+
+# ---------- 4. LAYOUT (canvas 100 x H) ----------
+W  <- 100
+H  <- PAR$alt_px / PAR$larg_px * 100
+yt <- function(d) H - d
+
+x_ini <- 25
+x_fim <- 95.5
+larg  <- x_fim - x_ini
+
+dados$y <- if (n == 1) yt(60) else seq(yt(28), yt(112), length.out = n)
+passo   <- if (n == 1) 8 else (yt(28) - yt(112)) / (n - 1)
+alt_b   <- min(5.5, passo * 0.85)
+
+barras <- resumo |>
+  filter(grupo %in% ordem) |>
+  mutate(estado = factor(estado, levels = names(ESTADOS))) |>
+  group_by(grupo) |>
+  arrange(estado, .by_group = TRUE) |>
+  mutate(
+    fim   = cumsum(pct),
+    ini   = fim - pct,
+    xmin  = x_ini + ini / 100 * larg,
+    xmax  = x_ini + fim / 100 * larg,
+    xm    = (xmin + xmax) / 2,
+    cor   = unname(ESTADOS[as.character(estado)]),
+    texto = paste0(pct, "%"),
+    cabe  = pct >= 6
+  ) |>
+  ungroup() |>
+  left_join(select(dados, grupo, y), by = "grupo") |>
+  filter(pct > 0)
+
+tx <- function(x, y, label, size, col = PAR$dark, fam = f_texto, face = "plain",
+               hjust = 0.5, lineheight = 1.0) {
+  annotate("text", x = x, y = y, label = label, size = size, colour = col,
+           family = fam, fontface = face, hjust = hjust, lineheight = lineheight)
+}
+
+anual   <- any(estados$anual)
+unidade <- if (anual) "anos" else "meses"
+tol_txt <- if (anual) PAR$tol_anual else PAR$tol_mensal
+titulo  <- paste0("Quantos ", unidade, " o preço da gasolina sobe, cai ou fica estável")
+subt    <- paste0("Estado da variação de preço (", min(year(estados$date)), "–",
+                  max(year(estados$date)), "), % dos ", unidade, " em cada estado")
+nota    <- paste0("Fonte: Ipeadata (ANP). Estável = variação entre -", tol_txt * 100,
+                  "% e +", tol_txt * 100, "% em relação ao período anterior.\n",
+                  if (por_bloco) paste0("Blocos de ", PAR$bloco_anos, " anos.") else "Ordenado pelo % em alta.")
+
+sz_tit <- min(6.2, 80 / (0.277 * nchar(titulo)))
+sz_sub <- min(4.0, 80 / (0.277 * nchar(subt)))
+
+leg <- tibble(estado = names(ESTADOS), cor = unname(ESTADOS), x = c(28, 49, 70))
+y_leg <- yt(17)
+
+# ---------- 5. GRÁFICO ----------
+p <- ggplot() +
+  tx(4.5, yt(5.0), titulo, sz_tit, PAR$dark, f_titulo, "bold", hjust = 0) +
+  tx(4.5, yt(8.8), subt,   sz_sub, PAR$grey, f_titulo, "bold", hjust = 0) +
+  geom_rect(data = leg, aes(xmin = x, xmax = x + 3.2, ymin = y_leg - 1.6, ymax = y_leg + 1.6, fill = cor),
+            colour = PAR$dark, linewidth = 0.4) +
+  geom_text(data = leg, aes(x = x + 4.4, y = y_leg, label = estado),
+            hjust = 0, family = f_texto, colour = PAR$dark, size = 3.4) +
+  geom_text(data = dados, aes(x = x_ini - 1.5, y = y, label = rotulo),
+            hjust = 1, family = f_texto, colour = PAR$dark, size = 3.3, lineheight = 0.9) +
+  geom_rect(data = barras,
+            aes(xmin = xmin, xmax = xmax, ymin = y - alt_b / 2, ymax = y + alt_b / 2, fill = cor),
+            colour = PAR$dark, linewidth = 0.4) +
+  geom_text(data = filter(barras, cabe),
+            aes(x = xm, y = y, label = texto),
+            family = f_texto, fontface = "bold", colour = PAR$dark, size = 3.2) +
+  # segmentos estreitos: rótulo logo acima do segmento
+  geom_text(data = filter(barras, !cabe),
+            aes(x = xm, y = y + alt_b / 2 + 1.1, label = texto),
+            family = f_texto, fontface = "bold", colour = PAR$dark, size = 2.6) +
+  tx(4.5,  yt(127.5), nota, 2.2, PAR$grey, hjust = 0) +
+  tx(95.5, yt(127.5), PAR$marca, 5.0, PAR$dark, f_titulo, "bold", hjust = 1) +
+  scale_fill_identity() +
+  coord_fixed(ratio = 1, xlim = c(0, W), ylim = c(0, H), expand = FALSE, clip = "off") +
+  theme_void() +
+  theme(plot.background = element_rect(fill = PAR$bg, colour = NA),
+        plot.margin = margin(0, 0, 0, 0))
+
+# ---------- 6. SALVAMENTO ----------
+arquivo <- file.path(PAR$dir_saida, PAR$arquivo)
+dir.create(dirname(arquivo), showWarnings = FALSE, recursive = TRUE)
+
+showtext_opts(dpi = PAR$dpi)
+ggsave(arquivo, p,
+       width  = PAR$larg_px / PAR$dpi,
+       height = PAR$alt_px  / PAR$dpi,
+       dpi    = PAR$dpi, bg = PAR$bg)
+showtext_opts(dpi = 96)
+
+message("Salvo em: ", arquivo)
