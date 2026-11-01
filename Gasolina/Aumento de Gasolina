@@ -1,0 +1,192 @@
+# =============================================================================
+# PROJETO 01: AUMENTO DA GASOLINA
+# Painel em formato de post de Instagram (1080 x 1440 px, proporção 3:4)
+# Fonte dos dados: ANP, via Ipeadata (Ipea)
+# Autor: Aldrei Peralta | Campo Analítico
+#
+# O que o script faz:
+#   1. Baixa a série de preço da gasolina no Ipeadata
+#   2. Calcula variação anual, média simples, CAGR e acumulado
+#   3. Desenha uma tabela como imagem (ggplot2 em um "canvas" 100 x H)
+#   4. Salva o PNG pronto para postar
+#
+# Como rodar: abra o projeto Ipea.Rproj e execute com Ctrl+Shift+S
+# =============================================================================
+
+# ---------- 0. INSTALAÇÃO (rode uma única vez) ----------
+# install.packages(c("ipeadatar", "dplyr", "lubridate", "ggplot2",
+#                    "showtext", "tibble"))
+
+# Para explorar outras séries do Ipeadata (use só no console):
+# library(ipeadatar)
+# search_series("gasolina")
+
+# ---------- 1. PARÂMETROS ----------
+# Tudo que muda a aparência ou a saída fica aqui, num único lugar.
+PAR <- list(
+  larg_px   = 1080,                  # largura da imagem em pixels
+  alt_px    = 1440,                  # altura: 1080x1440 (3:4), post do Instagram
+  dpi       = 150,                   # resolução de exportação
+  dir_saida = "01_gasolina",         # pasta onde o PNG será salvo
+  arquivo   = "gasolina_variacao.png",
+  marca     = "Aldrei Peralta",      # assinatura no rodapé
+  bg        = "#F8F8F4",             # cor de fundo
+  dark      = "#0C212C",             # cor principal do texto
+  grey      = "#8A98A3",             # cor de textos secundários
+  linha     = "#CBD6DD",             # cor das linhas separadoras
+  f_titulo  = "roboto_slab",         # apelido interno da fonte do título
+  f_texto   = "lato",                # apelido interno da fonte do texto
+  n_anos    = 15                     # quantos anos mostrar na tabela
+)
+
+# Carrega os pacotes sem poluir o console com mensagens
+suppressPackageStartupMessages({
+  library(ipeadatar)  # acesso à API do Ipeadata
+  library(dplyr)      # manipulação de dados
+  library(lubridate)  # funções de data (year)
+  library(ggplot2)    # gráfico
+  library(showtext)   # usar fontes do Google no ggplot
+})
+
+# Baixa as fontes do Google. Se estiver sem internet, cai para fonte padrão.
+f_titulo <- tryCatch({ font_add_google("Roboto Slab", PAR$f_titulo, bold.wt = 700); PAR$f_titulo }, error = function(e) "serif")
+f_texto  <- tryCatch({ font_add_google("Lato",       PAR$f_texto,  bold.wt = 700); PAR$f_texto  }, error = function(e) "sans")
+showtext_auto()  # ativa o showtext para todos os gráficos
+
+# ---------- 2. DADOS ----------
+# Série ANP_PRGASOL: preço médio da gasolina (R$/m³)
+dados <- ipeadata("ANP_PRGASOL")
+
+# Funções auxiliares de formatação ao estilo brasileiro
+# fmt_pct: 0.1234 -> "12,34%"
+fmt_pct <- function(x) paste0(formatC(x * 100, format = "f", digits = 2, decimal.mark = ","), "%")
+# fmt_mil: 3456.7 -> "3.457"
+fmt_mil <- function(x) format(round(x), big.mark = ".", decimal.mark = ",")
+
+tab <- dados |>
+  arrange(date) |>                    # garante ordem cronológica
+  transmute(
+    ano   = year(date),               # extrai o ano
+    preco = value,                    # preço do período
+    ant   = lag(value),               # preço do período anterior
+    var   = preco / ant - 1           # variação percentual (em decimal)
+  ) |>
+  filter(!is.na(var)) |>              # remove a 1ª linha (sem anterior)
+  slice_tail(n = PAR$n_anos)          # mantém só os últimos n_anos
+
+# ---------- ESTATÍSTICAS ACUMULADAS ----------
+# Preço de partida: o "anterior" da primeira linha da tabela
+base_preco <- first(tab$ant)
+
+tab <- tab |>
+  mutate(
+    n       = row_number(),                       # nº de períodos desde o início
+    media   = cummean(var),                       # média simples das variações até aqui
+    acum    = preco / base_preco - 1,             # variação acumulada desde o início
+    cagr    = (preco / base_preco)^(1 / n) - 1,   # taxa composta de crescimento
+    # textos prontos para exibir na imagem:
+    razao   = paste0(fmt_mil(preco), "/", fmt_mil(ant)),
+    pct     = fmt_pct(var),
+    media_t = fmt_pct(media),
+    cagr_t  = fmt_pct(cagr),
+    acum_t  = fmt_pct(acum)
+  )
+
+# Destaques para o rodapé da imagem
+n_anos  <- nrow(tab)
+ano_max <- tab$ano[which.max(tab$var)]   # ano da maior alta
+ano_min <- tab$ano[which.min(tab$var)]   # ano da maior queda
+
+# ---------- 3. LAYOUT ----------
+# O gráfico é um "canvas" vazio de largura 100 e altura H; todo o texto é
+# posicionado por coordenadas (x, y), como numa página de design.
+W  <- 100
+H  <- PAR$alt_px / PAR$larg_px * 100   # altura proporcional ao formato 3:4
+yt <- function(d) H - d                # converte "distância do topo" em coordenada y
+
+# Atalho para escrever texto no canvas
+tx <- function(x, y, label, size, col = PAR$dark, fam = f_texto, face = "plain",
+               hjust = 0.5, lineheight = 1.0) {
+  annotate("text", x = x, y = y, label = label, size = size, colour = col,
+           family = fam, fontface = face, hjust = hjust, lineheight = lineheight)
+}
+
+# Textos do painel
+titulo <- "Aumento da Gasolina"
+subt   <- paste0("Variação anual do preço médio da gasolina (R$/m³), ",
+                 min(tab$ano), "–", max(tab$ano))
+destaque <- paste0("Maior alta: ", ano_max, " (", fmt_pct(max(tab$var)), ")  •  ",
+                   "Maior queda: ", ano_min, " (", fmt_pct(min(tab$var)), ")")
+nota <- paste0("Fonte: ANP via IPEADATA. Valores nominais, média nacional.\n",
+               "Média, CAGR e acumulado calculados desde o início do período.")
+
+# Tamanho da fonte ajustado ao comprimento do texto (evita estourar a largura)
+sz_tit <- min(6.2, 80 / (0.277 * nchar(titulo)))
+sz_sub <- min(4.0, 80 / (0.277 * nchar(subt)))
+
+# Posição horizontal (x) de cada coluna da tabela
+x_ano <- 4.5; x_raz <- 23; x_var <- 43; x_med <- 59; x_cagr <- 76; x_acum <- 95.5
+tam   <- 3.9   # tamanho do texto das linhas
+
+# Posição vertical (y) de cada linha, distribuídas uniformemente
+tab$y <- seq(yt(27), yt(108), length.out = n_anos)
+
+# Cabeçalho das colunas (posição, alinhamento e rótulo)
+cab <- tibble::tibble(
+  x      = c(x_ano, x_raz, x_var, x_med, x_cagr, x_acum),
+  hj     = c(0, 0.5, 1, 1, 1, 1),   # 0 = esquerda, 0.5 = centro, 1 = direita
+  rotulo = c("ANO", "PREÇO / ANTERIOR\n(R$/m³)", "VARIAÇÃO\nANUAL",
+             "MÉDIA\nSIMPLES", "CAGR", "ACUMULADO")
+)
+
+# Gera uma coluna de texto da tabela: x = posição, col = coluna de `tab`
+linha_tab <- function(x, col, hj, cor = PAR$dark) {
+  geom_text(data = tab, aes(x = x, y = y, label = .data[[col]]),
+            hjust = hj, family = f_texto, fontface = "bold", colour = cor, size = tam)
+}
+
+# ---------- 4. GRÁFICO ----------
+# Monta o painel camada por camada (de cima para baixo)
+p <- ggplot() +
+  # cabeçalho: título e subtítulo
+  tx(4.5, yt(5.0), titulo, sz_tit, PAR$dark, f_titulo, "bold", hjust = 0) +
+  tx(4.5, yt(8.8), subt,   sz_sub, PAR$grey, f_titulo, "bold", hjust = 0) +
+  # títulos das colunas
+  geom_text(data = cab, aes(x = x, y = yt(15.5), label = rotulo, hjust = hj),
+            vjust = 0.5, lineheight = 0.95, family = f_texto, fontface = "bold",
+            colour = PAR$grey, size = 2.6) +
+  # linha separadora abaixo do cabeçalho
+  annotate("segment", x = 4.5, xend = 95.5, y = yt(20.5), yend = yt(20.5),
+           colour = PAR$linha, linewidth = 0.4) +
+  # linhas da tabela (uma chamada por coluna)
+  linha_tab(x_ano,  "ano",     0) +
+  linha_tab(x_raz,  "razao",   0.5, "grey40") +
+  linha_tab(x_var,  "pct",     1) +
+  linha_tab(x_med,  "media_t", 1) +
+  linha_tab(x_cagr, "cagr_t",  1) +
+  linha_tab(x_acum, "acum_t",  1) +
+  # separador final e frase de destaque (maior alta / maior queda)
+  annotate("segment", x = 4.5, xend = 95.5, y = yt(113), yend = yt(113),
+           colour = PAR$linha, linewidth = 0.4) +
+  tx(50, yt(118), destaque, 3.0, PAR$dark, f_texto, "bold") +
+  # rodapé: fonte à esquerda e assinatura à direita
+  tx(4.5,  yt(127.5), nota, 2.2, PAR$grey, hjust = 0) +
+  tx(95.5, yt(127.5), PAR$marca, 5.0, PAR$dark, f_titulo, "bold", hjust = 1) +
+  # canvas fixo, sem margens, sem eixos
+  coord_fixed(ratio = 1, xlim = c(0, W), ylim = c(0, H), expand = FALSE, clip = "off") +
+  theme_void() +
+  theme(plot.background = element_rect(fill = PAR$bg, colour = NA),
+        plot.margin = margin(0, 0, 0, 0))
+
+# ---------- 5. SALVAMENTO ----------
+arquivo <- file.path(PAR$dir_saida, PAR$arquivo)
+dir.create(dirname(arquivo), showWarnings = FALSE, recursive = TRUE)  # cria a pasta se não existir
+
+showtext_opts(dpi = PAR$dpi)   # showtext precisa estar no mesmo dpi do ggsave
+ggsave(arquivo, p,
+       width  = PAR$larg_px / PAR$dpi,    # pixels / dpi = polegadas
+       height = PAR$alt_px  / PAR$dpi,
+       dpi    = PAR$dpi, bg = PAR$bg)
+showtext_opts(dpi = 96)        # volta ao padrão
+
+message("Salvo em: ", arquivo)
