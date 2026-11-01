@@ -1,0 +1,11 @@
+Ipea/
+├── 01_ipca/
+│   ├── ipca.R
+│   └── ipca.png
+├── 02_desemprego/
+│   ├── desemprego.R
+│   └── desemprego.png
+├── .gitignore
+├── Ipea.Rproj
+├── LICENSE.md
+└── README.md
